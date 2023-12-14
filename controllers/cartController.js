@@ -1,64 +1,84 @@
-const Cart = require('../models/Cart')
+const Cart = require('../models/Cart');
+const Product = require('../models/Product');
 
-module.exports.getUserCart = (req, res) =>{
-    return Cart.find({userId: req.user.id})
-    .then((result)=>{
-        console.log(result);
-        if(!result || result.length === 0){
-
-            res.status(404).send({message: 'Empty Cart'})
-        } else {
-            res.status(200).send({message: result})
-        }
-    })
-    .catch((error) => {
-        console.error(error);
-        return res.status(500).send({ message: 'Internal server error.' });
-      });
-}
+module.exports.getUserCart = (req, res) => {
+    Cart.findOne({ userId: req.user.id })
+        .then((result) => {
+            if (!result || result.cartItems.length === 0) {
+                res.status(404).send({ message: 'Empty Cart' });
+            } else {
+                res.status(200).send({ message: result });
+            }
+        })
+        .catch((error) => {
+            console.error(error);
+            return res.status(500).send({ message: 'Internal server error.' });
+        });
+};
 
 module.exports.addToCart = (req, res) => {
-    return Cart.findOne({userId: req.user.id})
-    .then((result)=>{
-        console.log(result)
-        if(!result){
-            let newCart = new Cart({
-                userId: req.user.id,
-                cartItems: req.body.cartItems,
-                totalPrice: req.body.totalPrice
-            })
-            return newCart.save()
-            .then((savedCart, err)=>{
-                if(err){
-                    return res.status(400).send({message: 'Cart not saved'})
-                } else {
-                    return res.status(200).send({message: savedCart})
-                }
-            })
-            .catch((error) => {
-                console.error(error);
-                return res.status(500).send({ message: 'Internal server error.' });
-              });
-        } else {
-            result.cartItems.push(req.body.cartItems);
-            result.totalPrice += req.body.cartItems.subtotal;
-            return result.save()
-            .then((updatedCart, err) => {
-                if (err) {
-                    return res.status(400).send({ message: 'Failed to update cart' });
-                } else {
-                    return res.status(200).send({ message: updatedCart });
-                }
-            })
-        }
-    })
-    .catch((error) => {
-        console.error(error);
-        return res.status(500).send({ message: 'Internal server error.' });
-      });
-}
+    Cart.findOne({ userId: req.user.id })
+        .then((cartResult) => {
+            if (cartResult) {
+                const existingProduct = cartResult.cartItems.find(item => item.productId === req.body.productId);
 
-module.exports.changeCartQuantity = (req, res) => {
+                if (existingProduct) {
+                    return res.status(400).send({ message: 'Product is already in the cart. Please proceed to PATCH /carts/update-cart-quantity' });
+                } else {
+                    Product.findById(req.body.productId)
+                        .then((product) => {
+                            if (!product) {
+                                return res.status(404).send({ message: 'Product does not exist.' });
+                            }
+
+                            cartResult.cartItems.push({
+                                productId: req.body.productId,
+                                quantity: req.body.quantity,
+                                subtotal: req.body.quantity * product.price,
+                                price: product.price,
+                            });
+
+                            cartResult.totalPrice = cartResult.cartItems.reduce((total, item) => total + item.subtotal, 0);
+
+                            cartResult.save()
+                                .then(updatedCart => {
+                                    res.status(200).send({ message: updatedCart });
+                                })
+                                .catch(error => res.status(400).send({ message: 'Failed to update cart' }));
+                        })
+                        .catch(error => res.status(500).send({ message: 'Internal server error.' + error }));
+                }
+            } else {
+                Product.findById(req.body.productId)
+                    .then((product) => {
+                        if (!product) {
+                            return res.status(404).send({ message: 'Product does not exist.' });
+                        }
+
+                        const newCart = new Cart({
+                            userId: req.user.id,
+                            cartItems: [
+                                {
+                                    productId: req.body.productId,
+                                    quantity: req.body.quantity,
+                                    subtotal: req.body.quantity * product.price,
+                                    price: product.price,
+                                },
+                            ],
+                            totalPrice: req.body.quantity * product.price,
+                        });
+
+                        newCart.save()
+                            .then(savedCart => res.status(200).send({ message: savedCart }))
+                            .catch(error => res.status(403).send({ message: 'Cart not saved' }));
+                    })
+                    .catch(error => res.status(500).send({ message: 'Internal server error.' + error }));
+            }
+        })
+        .catch(error => res.status(500).send({ message: 'Internal server error.' + error }));
+};
+
+module.exports.updateCartQuantity = (req, res) => {
     Cart.findOneAndUpdate(
         { userId: req.user.id, 'cartItems.productId': req.body.productId },
         { $set: { 'cartItems.$.quantity': req.body.quantity } },
@@ -68,7 +88,25 @@ module.exports.changeCartQuantity = (req, res) => {
         if (!result) {
             return res.status(404).send({ message: "The product you're trying to change quantity with is not within the cart." });
         } else {
-            return res.status(200).send({ message: 'Successfully changed quantity to ' + req.body.quantity });
+            const fetchProductDetails = result.cartItems.map(item =>
+                Product.findById(item.productId)
+                    .then(product => {
+                        if (!product) {
+                            throw new Error("Product not found.");
+                        }
+                        item.price = product.price;
+                        item.subtotal = item.quantity * item.price;
+                        return item;
+                    })
+            );
+
+            return Promise.all(fetchProductDetails)
+                .then(updatedCartItems => {
+                    result.totalPrice = updatedCartItems.reduce((total, item) => total + item.subtotal, 0);
+                    return result.save();
+                })
+                .then(updatedCart => res.status(200).send({ message: 'Successfully changed quantity to ' + req.body.quantity, updatedCart }))
+                .catch(error => res.status(400).send({ message: 'Failed to update cart: ' + error.message }));
         }
     })
     .catch((error) => {
@@ -78,41 +116,55 @@ module.exports.changeCartQuantity = (req, res) => {
 };
 
 module.exports.removeProduct = (req, res) => {
-    Cart.findOneAndUpdate(
-        { userId: req.user.id },
-        { $pull: { 'cartItems': { productId: req.body.productId } } },
-        { new: true }
-    )
-    .then((result) => {
-        if (!result) {
-            return res.status(404).send({ message: 'No cart found.' });
-        } else {
-            return res.status(200).send({ message: 'Successfully removed product with productId ' + req.body.productId });
-        }
-    })
-    .catch((error) => {
-        console.error(error);
-        return res.status(500).send({ message: 'Internal server error.' + error });
-    });
+    Cart.findOne({ userId: req.user.id })
+        .then((result) => {
+            if (!result) {
+                return res.status(404).send({ message: 'No cart found.' });
+            }
+
+            // Check if the product exists in the cart
+            const productIndex = result.cartItems.findIndex(item => item.productId === req.params.productId);
+
+            if (productIndex !== -1) {
+                // Product found, remove it from the cart
+                result.cartItems.splice(productIndex, 1);
+
+                // Update the totalPrice
+                result.totalPrice = result.cartItems.reduce((total, item) => total + item.subtotal, 0);
+
+                // Save the updated cart
+                result.save()
+                    .then((updatedCart) => res.status(200).send({ message: 'Successfully removed product with productId ' + req.params.productId, updatedCart }))
+                    .catch(error => res.status(500).send({ message: 'Failed to update cart: ' + error }));
+            } else {
+                // Product not found in the cart
+                return res.status(404).send({ message: 'Product with productId ' + req.params.productId + ' is not in the cart.' });
+            }
+        })
+        .catch((error) => {
+            console.error(error);
+            return res.status(500).send({ message: 'Internal server error.' + error });
+        });
 };
 
-module.exports.clearProducts = (req, res) => {
 
-    Cart.findOneAndUpdate(
-        { userId: req.user.id },
-        { $set: { 'cartItems': [] } },
-        { new: true }
-    )
-    .then((result) => {
-        if (!result) {
-            return res.status(404).send({ message: 'No cart found.' });
-        } else {
-            return res.status(200).send({ message: 'Successfully cleared all products from the cart.' });
-        }
-    })
-    .catch((error) => {
-        console.error(error);
-        return res.status(500).send({ message: 'Internal server error.' + error });
-    });
+module.exports.clearCart = (req, res) => {
+    Cart.findOne({ userId: req.user.id })
+        .then((result) => {
+            if (!result) {
+                return res.status(404).send({ message: 'No cart found.' });
+            } else if (result.cartItems.length === 0) {
+                return res.status(200).send({ message: 'Cart is already empty.' });
+            } else {
+                result.cartItems = [];
+                result.totalPrice = 0;
+                result.save()
+                    .then(updatedCart => res.status(200).send({ message: 'Successfully cleared all products from the cart.' }))
+                    .catch(error => res.status(500).send({ message: 'Failed to clear cart: ' + error }));
+            }
+        })
+        .catch((error) => {
+            console.error(error);
+            return res.status(500).send({ message: 'Internal server error.' + error });
+        });
 };
-

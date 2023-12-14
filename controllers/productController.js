@@ -2,7 +2,7 @@ const Product = require('../models/Product');
 
 module.exports.createProduct = (req, res) =>{
     const {name, description, price, isActive} = req.body;
-    return Product.findOne({name: req.body.name})
+    return Product.findOne({name: {$regex: new RegExp(req.body.name, 'i')}})
     .then((result)=>{
         if(result){
             res.status(403).send({message: 'Duplicated product name found.'})
@@ -48,6 +48,21 @@ module.exports.getAllProducts = (req, res) =>{
 	  });
 }
 
+module.exports.getAllActiveProducts = (req, res) =>{
+    return Product.find({isActive: true})
+    .then((result)=>{
+        if(!result){
+            return res.status(404).send({message: 'No products found'})
+        } else {
+            return res.status(200).send({products: result})
+        }
+    })
+    .catch((error) => {
+		console.error(error);
+		return res.status(500).send({ message: 'Internal server error.' });
+	  });
+};
+
 module.exports.getProduct = (req, res) =>{
     return Product.findById(req.params.productId)
     .then((result)=>{
@@ -61,7 +76,31 @@ module.exports.getProduct = (req, res) =>{
 		console.error(error);
 		return res.status(404).send({ message: 'Product does not exist' });
 	  });
-}
+};
+
+module.exports.updateProductInfo = (req, res) => {
+    return Product.findById(req.params.productId)
+    .then((result)=>{
+        if(!result){
+            return res.status(400).send({message: 'No product found'})
+        } else {
+            return Product.findByIdAndUpdate(req.params.productId, {
+                name: req.body.name,
+                description: req.body.description,
+                price: req.body.price,
+                isActive: req.body.isActive,
+                new: true
+            })
+            .then((updatedProduct)=>{
+                if(!updatedProduct){
+                    return res.status(400).send({message: `Error updating product ${updatedProduct.id}`})
+                } else {
+                    return res.status(200).send({message: `Successfully updated product ${updatedProduct.id}`})
+                }
+            })
+        };
+    });
+};
 
 module.exports.archiveProduct = (req, res) => {
     return Product.findById(req.params.productId)
@@ -69,7 +108,10 @@ module.exports.archiveProduct = (req, res) => {
         if (result.isActive == false){
             res.status(403).send({message: 'Product is already archived'})
         } else {
-            return Product.findByIdAndUpdate(req.params.productId, {isActive: false, new: true})
+            return Product.findByIdAndUpdate(req.params.productId, {
+                isActive: false, 
+                new: true
+            })
             .then((archivedProduct)=>{
                 if(!archivedProduct){
                     return res.status(400).send({message: 'Error archiving product'})
@@ -87,7 +129,7 @@ module.exports.archiveProduct = (req, res) => {
         console.error(error);
         return res.status(500).send({ message: 'Internal server error' });
       });
-}
+};
 
 module.exports.activateProduct = (req, res) => {
     return Product.findById(req.params.productId)
@@ -98,9 +140,9 @@ module.exports.activateProduct = (req, res) => {
             return Product.findByIdAndUpdate(req.params.productId, {isActive: true, new: true})
             .then((activatedProduct)=>{
                 if(!activatedProduct){
-                    return res.status(400).send({message: 'Error archiving product'})
+                    return res.status(400).send({message: 'Error activating product'})
                 } else {
-                    return res.status(200).send({message: 'Successfully archived product'})
+                    return res.status(200).send({message: 'Successfully activated product'})
                 }
             })
             .catch((error) => {
@@ -113,7 +155,7 @@ module.exports.activateProduct = (req, res) => {
         console.error(error);
         return res.status(500).send({ message: 'Internal server error' });
       });
-}
+};
 
 module.exports.searchProductByName = (req,res) => {
     const productName = req.body.name;
@@ -125,7 +167,7 @@ module.exports.searchProductByName = (req,res) => {
             return res.status(200).send({product: result})
         }
     })
-}
+};
 
 module.exports.searchProductByPriceRange = (req, res) => {
     const minPrice = req.body.minPrice;

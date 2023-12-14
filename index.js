@@ -1,18 +1,22 @@
-const express = require('express');
-const mongoose = require('mongoose');
+// ---------------- DEPENDENCIES -----------------
+const express = require("express");
 const app = express();
-const userRoute = require('./routes/userRoute');
-const productRoute = require('./routes/productRoute');
-const cartRoute = require('./routes/cartRoute');
-const orderRoute = require('./routes/orderRoute');
-const port = 4000;
+const mongoose = require("mongoose");
+const cors = require("cors");
+const userRoutes = require('./routes/user')
+const productRoutes = require('./routes/productRoute');
+const cartRoutes = require('./routes/cartRoute');
+const orderRoutes = require('./routes/orderRoute');
 const passport = require("passport");
 const session = require('express-session');
-const cors = require("cors");
 require("./passport");
 
+const port = process.env.PORT || 4000;
+
+//----------------- MIDDLEWARES ------------------
 app.use(express.json());
-app.use(express.urlencoded({extended: true}));
+app.use(express.urlencoded({ extended: true }));
+app.use(cors())
 
 app.use(session({
 	secret: process.env.clientSecret,
@@ -23,22 +27,27 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// connect to mongoDB
-mongoose.connect('mongodb+srv://admin:admin@capstone2.jqucj09.mongodb.net/capstone-2', {useNewUrlParser: true, useUnifiedTopology: true})
 
-let db = mongoose.connection;
+//----------------- DATABASE ---------------------
+mongoose.connect(
+  "mongodb+srv://admin:admin@capstone2.jqucj09.mongodb.net/capstone-2",
+  {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  }
+);
 
-db.on('error', (error)=> {
-    console.log('Error ' +  error);
-})
+mongoose.connection.once("open", () =>
+  console.log("Connected to MongoDB Atlas")
+);
 
-db.once('open', ()=>{
-    app.listen(port, ()=>{
-        console.log('Listening to port', port)
-    })
-})
+//----------------- PORT ------------------------
+app.listen(port, () => {
+  console.log(`Server is now running at ${port}`);
+});
 
-app.use('/users', userRoute);
-app.use('/products', productRoute);
-app.use('/cart', cartRoute);
-app.use('/orders', orderRoute);
+// ---------------- ROUTES ----------------------
+app.use("/users", userRoutes);
+app.use("/products", productRoutes);
+app.use("/cart", cartRoutes);
+app.use("/orders", orderRoutes);

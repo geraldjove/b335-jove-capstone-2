@@ -1,52 +1,65 @@
-const jwt = require('jsonwebtoken');
-const secret = 'B335BonafeJoveCapstone2'
-
-// create access token
+const jwt = require("jsonwebtoken");
+// const secret = "Capstone2API";
+require('dotenv').config();
 
 module.exports.createAccessToken = (user) => {
-    const data = {
-        id: user._id,
-        email: user.email,
-        isAdmin: user.isAdmin
-    }
-    return jwt.sign(data, secret, {})
-}
+  const data = {
+    id: user.id,
+    email: user.email,
+    isAdmin: user.isAdmin,
+  };
 
-// verifyToken
+  return jwt.sign(data, process.env.SECRET || secret, {});
+};
 
 module.exports.verify = (req, res, next) => {
-    let token = req.headers.authorization;
-    if (typeof token === 'undefined'){
-        return res.status(401).send('Error Token ')
-    } else {
-        // remove bearer string
-        token = token.slice(7, token.length)
-        return jwt.verify(token, secret, (err,decodedToken) =>{
-            if (err){
-                return res.status(400).send('Error decoding token');
-            } else {
-                req.user = decodedToken;
-                next();
-            }
-        })
-    }
-}
+  // console.log(req.headers.authorization);
 
-// verify admin
+  let token = req.headers.authorization;
+
+  if (typeof token === "undefined") {
+    return res.send({ auth: "Failed. No Token" });
+  } else {
+    // console.log(token);
+    // Removes the "Bearer" string
+    token = token.slice(7, token.length);
+    // console.log(token);
+
+    jwt.verify(token, process.env.SECRET || secret, function (err, decodedToken) {
+      if (err) {
+        return res.send({
+          auth: "Failed",
+          message: err.message,
+        });
+      } else {
+        // console.log("result from verify method:");
+        // console.log(decodedToken);
+
+        req.user = decodedToken;
+
+        next();
+      }
+    });
+  }
+};
+
 module.exports.verifyAdmin = (req, res, next) => {
-    if (req.user.isAdmin === true){
-        next()
-    } else {
-        return res.status(403).send({forbidden: 'Unauthorized or user is not an admin'});
-    }
-}
+  if (req.user.isAdmin) {
+    next();
+  } else {
+    return res.status(403).send({
+      auth: "Failed",
+      message: "Action Forbidden",
+    });
+  }
+};
 
 // Middleware to check if the user is authenticated
 module.exports.isLoggedIn = (req, res, next) =>{
-    if(req.user){
-        next();
-    }
-    else{
-        res.sendStatus(401);
-    }
+  if(req.user){
+      next();
+  }
+  else{
+      res.sendStatus(401);
+  }
 }
