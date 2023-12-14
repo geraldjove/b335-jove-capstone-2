@@ -30,7 +30,7 @@ app.use(passport.session());
 
 //----------------- DATABASE ---------------------
 mongoose.connect(
-  "mongodb+srv://admin:admin@capstone2.jqucj09.mongodb.net/capstone-2",
+  "",
   {
     useNewUrlParser: true,
     useUnifiedTopology: true,
